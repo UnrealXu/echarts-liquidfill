@@ -2,13 +2,18 @@ import * as echarts from 'echarts/lib/echarts';
 import * as numberUtil from 'echarts/lib/util/number';
 import LiquidShape from './liquidFillShape';
 
-const parsePercent = numberUtil.parsePercent;
+var parsePercent = numberUtil.parsePercent;
+
+function isPathSymbol(symbol) {
+    return symbol && symbol.indexOf('path://') === 0
+}
 
 echarts.extendChartView({
 
     type: 'liquidFill',
 
     render: function (seriesModel, ecModel, api) {
+        var self = this;
         var group = this.group;
         group.removeAll();
 
@@ -140,15 +145,37 @@ echarts.extendChartView({
 
                 // changes with animation
                 echarts.graphic.updateProps(waveElement, {
-                    shape: shape
+                    shape: shape,
+                    x: newWave.x,
+                    y: newWave.y
                 }, seriesModel);
 
-                waveElement.useStyle(style);
+                if (seriesModel.isUniversalTransitionEnabled && seriesModel.isUniversalTransitionEnabled()) {
+                    echarts.graphic.updateProps(waveElement, {
+                        style: style
+                    }, seriesModel);
+                }
+                else {
+                    waveElement.useStyle(style);
+                }
 
                 // instant changes
-                waveElement.position = newWave.position;
+                var oldWaveClipPath = waveElement.getClipPath();
+                var newWaveClipPath = newWave.getClipPath();
+
                 waveElement.setClipPath(newWave.getClipPath());
                 waveElement.shape.inverse = newWave.inverse;
+
+                if (oldWaveClipPath && newWaveClipPath
+                    && self._shape === symbol
+                    // TODO use zrender morphing to apply complex symbol animation.
+                    && !isPathSymbol(symbol)
+                ) {
+                    // Can be animated.
+                    echarts.graphic.updateProps(newWaveClipPath, {
+                        shape: oldWaveClipPath.shape
+                    }, seriesModel, { isFrom: true });
+                }
 
                 setWaveAnimation(newIdx, waveElement, waveElement);
                 group.add(waveElement);
@@ -165,6 +192,7 @@ echarts.extendChartView({
             group.add(getText(waves));
         }
 
+        this._shape = symbol;
         this._data = data;
 
         /**
@@ -177,7 +205,7 @@ echarts.extendChartView({
         function getPath(r, isForClipping) {
             if (symbol) {
                 // customed symbol path
-                if (symbol.indexOf('path://') === 0) {
+                if (isPathSymbol(symbol)) {
                     var path = echarts.graphic.makePath(symbol.slice(7), {});
                     var bouding = path.getBoundingRect();
                     var w = bouding.width;
@@ -199,7 +227,8 @@ echarts.extendChartView({
                         new echarts.graphic.BoundingRect(left, top, w, h)
                     );
                     if (isForClipping) {
-                        path.position = [-w / 2, -h / 2];
+                        path.x = -w / 2;
+                        path.y = -h / 2;
                     }
                     return path;
                 }
@@ -310,7 +339,8 @@ echarts.extendChartView({
                     inverse: isInverse
                 },
                 style: normalStyle,
-                position: [cx, cy]
+                x: cx,
+                y: cy,
             });
             wave.shape._waterLevel = waterLevel;
 
@@ -460,7 +490,8 @@ echarts.extendChartView({
                 shape: {
                     paths: waves
                 },
-                position: [cx, cy]
+                x: cx,
+                y: cy
             });
 
             wavePath.setClipPath(boundingCircle);
